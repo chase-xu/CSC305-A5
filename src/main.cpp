@@ -134,27 +134,18 @@ void build_uniform(UniformAttributes &uniform)
     u[2], v[2], w[2], camera_position[2],
     0, 0, 0, 1;
     
-    // std::cout<<temp<<'\n';
-
     const Matrix4f m_cam =  temp.inverse();
     // //TODO: compute the camera transformation
     uniform.camera =  m_cam;
-
-
-    // std::cout<<m_cam<<endl;
-    
     Matrix4d P;
     if (is_perspective)
     {
        //TODO setup prespective camera
         uniform.projection = uniform.ortho_proj * m_cam;
-        // std::cout<<uniform.projection<<endl;
     }
     else
     {
-    //    uniform.projection = m_vp * uniform.ortho_proj;
         uniform.projection = uniform.ortho_proj;
-       
     }
 }
 
@@ -197,9 +188,6 @@ void simple_render(Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::D
         vertex_attributes.push_back(v2);
         vertex_attributes.push_back(v3);
     }
-    
-    //TODO: build the vertex attributes from vertices and facets
-
     rasterize_triangles(program, uniform, vertex_attributes, frameBuffer);
 }
 
@@ -212,6 +200,8 @@ Matrix4f compute_rotation(const double alpha)
         0, 1, 0, 0,
         -sin(alpha), 0, cos(alpha), 0,
         0, 0, 0, 1;
+
+    // rotate around z
     // const double a = alpha;
     // res << cos(a), -sin(a), 0,0,
     //     sin(a), cos(a), 0, 0,
@@ -228,14 +218,12 @@ void wireframe_render(const double alpha, Eigen::Matrix<FrameBufferAttributes, E
     Program program;
 
     Matrix4f trafo = compute_rotation(alpha);
-    // std::cout<< trafo<<endl;
 
     program.VertexShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
         //TODO: fill the shader
         VertexAttributes out;
         Vector4f pos =  -uniform.projection * va.trafo * va.position;
         out.position = pos;
-        // MatrixXf tmp1 = va.trafo * pos;
         // std::cout<< tmp1<<endl;
         // out.position << tmp1(0,0), tmp1(0, 1), tmp1(0, 2), tmp1(0,3);
         return out;
@@ -323,7 +311,7 @@ void get_shading_program(Program &program)
         Vector3d C = ambient_light + lights_color;
 
         //Set alpha to 1
-        C(3) = 1;
+        // C(3) = 1;
         out.color << C(0), C(1), C(2), 1;
         return out;
     };
@@ -335,20 +323,18 @@ void get_shading_program(Program &program)
         out.position = va.position;
         out.depth = va.position[2];
         return out;
-    //    return FragmentAttributes(va.color);
     };
 
     program.BlendingShader = [](const FragmentAttributes &fa, const FrameBufferAttributes &previous) {
         //TODO: implement the depth check
-        double alpha = fa.color(3);
-        Vector4d new_color (fa.color(0), fa.color(1), fa.color(2), fa.color(3));
-        Vector4d pre_color (previous.color(0)/255, previous.color(1)/255,previous.color(2)/255,previous.color(3)/255);
-        Vector4d out_color = (1 - alpha)*pre_color + alpha*new_color;
+        // double alpha = fa.color(3);
+        // Vector4d new_color (fa.color(0), fa.color(1), fa.color(2), fa.color(3));
+        // Vector4d pre_color (previous.color(0)/255, previous.color(1)/255,previous.color(2)/255,previous.color(3)/255);
+        // Vector4d out_color = (1 - alpha)*pre_color + alpha*new_color;
         if (fa.depth < previous.depth)
         {
             // float alpha = fa.color[3];
             // Eigen::Vector4f blend = fa.color.array() * alpha + (previous.color.cast<float>().array() / 255) * (1 - alpha);
-
             // FrameBufferAttributes out (blend[0] * 255, blend[1] * 255, blend[2] * 255, blend[3] * 255);
             // FrameBufferAttributes out(out_color[0] * 255, out_color[1] * 255, out_color[2] * 255, out_color[3] * 255);
             FrameBufferAttributes out(fa.color[0] * 255, fa.color[1] * 255, fa.color[2] * 255, fa.color[3] * 255);
@@ -414,7 +400,6 @@ void flat_shading(const double alpha, Eigen::Matrix<FrameBufferAttributes, Eigen
         vertex_attributes.push_back(v3);
 
     }
-    // std::cout<<uniform<<endl;
     rasterize_triangles(program, uniform, vertex_attributes, frameBuffer);
 }
 
@@ -524,9 +509,7 @@ int main(int argc, char *argv[])
     stbi_write_png("pv_shading.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
 
     //TODO: add the animation
-
-    const char *fileName = "flat_rotation.gif";
-    // vector<uint8_t> image;
+    const char *fileName = "wireframe_rotation.gif";
     int delay = 25;
     GifWriter g;
     GifBegin(&g, fileName, frameBuffer.rows(), frameBuffer.cols(), delay);
@@ -534,12 +517,12 @@ int main(int argc, char *argv[])
     for (float i = 0; i < 2*M_PI; i += 0.3)
     {
         frameBuffer.setConstant(FrameBufferAttributes());
-        flat_shading(i, frameBuffer);
-        // pv_shading(i, frameBuffer);
+        // wireframe_render(i, frameBuffer);
+        // flat_shading(i, frameBuffer);
+        pv_shading(i, frameBuffer);
         framebuffer_to_uint8(frameBuffer, image);
         GifWriteFrame(&g, image.data(), frameBuffer.rows(), frameBuffer.cols(), delay);
     }
-
     GifEnd(&g);
 
     return 0;
