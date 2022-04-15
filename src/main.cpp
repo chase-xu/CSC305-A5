@@ -46,7 +46,7 @@ const double obj_specular_exponent = 256.0;
 std::vector<Vector3d> light_positions;
 std::vector<Vector3d> light_colors;
 //Ambient light
-const Vector3d ambient_light(0.3, 0.3, 0.3, 0);
+const Vector3d ambient_light(0.3, 0.3, 0.3);
 
 //Fills the different arrays
 void setup_scene()
@@ -293,10 +293,10 @@ void get_shading_program(Program &program)
         //TODO: compute the correct lighting
         VertexAttributes out;
         out.position = -uniform.projection * va.trafo * va.position;
-        Vector4d p, N;
+        Vector3d p, N;
         N = va.norm;
-        p << out.position[0], out.position[1], out.position[2], out.position[3];
-        Vector4d lights_color(0, 0, 0, 0);
+        p << out.position[0], out.position[1], out.position[2];
+        Vector3d lights_color(0, 0, 0);
         for (int i = 0; i < light_positions.size(); ++i)
         // for (int i = 0; i < 1; ++i)
         {
@@ -305,13 +305,13 @@ void get_shading_program(Program &program)
 
             const Vector3d Li = (light_position - p).normalized(); //normal vector pointing to light from intersectio
             const Vector3d shadow_ray =  (light_position - p).normalized();
-            Vector4d diff_color = obj_diffuse_color;
-            Vector4d specular_color = obj_specular_color;
+            Vector3d diff_color = obj_diffuse_color;
+            Vector3d specular_color = obj_specular_color;
             // Diffuse contribution
-            const Vector4d diffuse = diff_color * std::max(Li.dot(N), 0.0);
+            const Vector3d diffuse = diff_color * std::max(Li.dot(N), 0.0);
             const Vector3d camera_view_position = camera_position - p;
             const Vector3d h = (shadow_ray + (-camera_view_position)).normalized();
-            const Vector4d specular = -specular_color * pow(std::max(h.dot(N), 0.0), obj_specular_exponent);
+            const Vector3d specular = -specular_color * pow(std::max(h.dot(N), 0.0), obj_specular_exponent);
             // std::cout << specular << std::endl;
             // Attenuate lights according to the squared distance to the lights
             const Vector3d D = light_position - p;
@@ -319,24 +319,19 @@ void get_shading_program(Program &program)
             lights_color += (diffuse + specular).cwiseProduct(light_color) / D.squaredNorm();
             // lights_color += diffuse + specular;
         }
-        Vector4d C = ambient_light + lights_color;
+        Vector3d C = ambient_light + lights_color;
 
         //Set alpha to 1
-        Vector4f colo;
         C(3) = 1;
-        std::cout<<C<<endl;
-        std::cout<<endl;
-        colo << C(0), C(1), C(2), 1;
-        out.color = colo;
+        out.color << C(0), C(1), C(2), 1;
         return out;
     };
 
     program.FragmentShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
         //TODO: create the correct fragment
         Vector4f color = va.color;
-        FragmentAttributes out (color[0], color[1], color[2]); //can't change
-        // FragmentAttributes out;
-        // out.color = color;
+        FragmentAttributes out (color[0], color[1], color[2], color[3]);
+        out.position = va.position;
         return out;
     //    return FragmentAttributes(va.color);
     };
