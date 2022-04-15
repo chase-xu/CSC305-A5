@@ -2,6 +2,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <math.h>
 
 // Utilities for the Assignment
 #include "raster.h"
@@ -45,7 +46,7 @@ const double obj_specular_exponent = 256.0;
 std::vector<Vector3d> light_positions;
 std::vector<Vector3d> light_colors;
 //Ambient light
-const Vector3d ambient_light(0.3, 0.3, 0.3);
+const Vector3d ambient_light(0.3, 0.3, 0.3, 0);
 
 //Fills the different arrays
 void setup_scene()
@@ -99,21 +100,61 @@ void setup_scene()
 
 void build_uniform(UniformAttributes &uniform)
 {
-    //TODO: setup uniform
+    //TODO: setup uniform contains points?
+    float near = -near_plane;
+    float far = -far_plane;
+    float t = std::abs(near) * std::tan(field_of_view / 2);
+    // float t = near * std::tan(field_of_view / 2);
+    // float t = camera_top[1];
+    float b = -t;
+    float r = aspect_ratio * t;
+    float l = -r;
 
-    //TODO: setup camera, compute w, u, v
+    uniform.ortho_proj <<
+       2.f / (r - l), 0, 0, -(r+l)/(r-l),
+       0, 2.f / (t - b), 0, -(t+b)/(t-b),
+       0, 0, 2.f / (near - far), -(near+far)/(near-far),
+       0, 0, 0, 1;
+    // //TODO: setup camera, compute w, u, v
+    Vector3d w = - camera_gaze.normalized();
+    Vector3d u = (camera_top.cross(w)).normalized();
+    Vector3d v = w.cross(u);
 
-    //TODO: compute the camera transformation
+    Matrix4f m_vp;
+    int nx = H;
+    int ny = H;
+    m_vp << nx/2, 0, 0, (nx-1)/2,
+        0, ny/2, 0, (ny-1)/2,
+        0, 0, 1, 0,
+        0, 0, 0, 1; 
 
-    //TODO: setup projection matrix
+    Matrix4f temp;
+    temp << u(0), v(0), w(0), camera_position(0), 
+    u[1], v[1], w[1], camera_position[1],
+    u[2], v[2], w[2], camera_position[2],
+    0, 0, 0, 1;
+    
+    // std::cout<<temp<<'\n';
 
+    const Matrix4f m_cam =  temp.inverse();
+    // //TODO: compute the camera transformation
+    uniform.camera =  m_cam;
+
+
+    // std::cout<<m_cam<<endl;
+    
     Matrix4d P;
     if (is_perspective)
     {
-        //TODO setup prespective camera
+       //TODO setup prespective camera
+        uniform.projection = uniform.ortho_proj * m_cam;
+        // std::cout<<uniform.projection<<endl;
     }
     else
     {
+    //    uniform.projection = m_vp * uniform.ortho_proj;
+        uniform.projection = uniform.ortho_proj;
+       
     }
 }
 
@@ -125,7 +166,9 @@ void simple_render(Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::D
 
     program.VertexShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
         //TODO: fill the shader
-        return va;
+        VertexAttributes out;
+        out.position = uniform.projection * va.position;
+        return out;
     };
 
     program.FragmentShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
@@ -139,15 +182,41 @@ void simple_render(Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::D
     };
 
     std::vector<VertexAttributes> vertex_attributes;
+    VertexAttributes v1;
+    VertexAttributes v2;
+    VertexAttributes v3;
+    for (int i =0;i<facets.rows();++i){
+        int a = facets(i,0);
+        int b = facets(i,1);
+        int c = facets(i,2);
+
+        v1 = VertexAttributes(vertices(a,0),vertices(a,1),vertices(a,2));
+        v2 = VertexAttributes(vertices(b,0),vertices(b,1),vertices(b,2));
+        v3 = VertexAttributes(vertices(c,0),vertices(c,1),vertices(c,2));
+        vertex_attributes.push_back(v1);
+        vertex_attributes.push_back(v2);
+        vertex_attributes.push_back(v3);
+    }
+    
     //TODO: build the vertex attributes from vertices and facets
 
     rasterize_triangles(program, uniform, vertex_attributes, frameBuffer);
 }
 
-Matrix4d compute_rotation(const double alpha)
+Matrix4f compute_rotation(const double alpha)
 {
     //TODO: Compute the rotation matrix of angle alpha on the y axis around the object barycenter
-    Matrix4d res;
+    Matrix4f res;
+
+    res << cos(alpha), 0, sin(alpha), 0,
+        0, 1, 0, 0,
+        -sin(alpha), 0, cos(alpha), 0,
+        0, 0, 0, 1;
+    // const double a = alpha;
+    // res << cos(a), -sin(a), 0,0,
+    //     sin(a), cos(a), 0, 0,
+    //     0, 0, 1, 0,
+    //     0, 0, 0, 1;
 
     return res;
 }
@@ -158,11 +227,18 @@ void wireframe_render(const double alpha, Eigen::Matrix<FrameBufferAttributes, E
     build_uniform(uniform);
     Program program;
 
-    Matrix4d trafo = compute_rotation(alpha);
+    Matrix4f trafo = compute_rotation(alpha);
+    // std::cout<< trafo<<endl;
 
     program.VertexShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
         //TODO: fill the shader
-        return va;
+        VertexAttributes out;
+        Vector4f pos =  -uniform.projection * va.trafo * va.position;
+        out.position = pos;
+        // MatrixXf tmp1 = va.trafo * pos;
+        // std::cout<< tmp1<<endl;
+        // out.position << tmp1(0,0), tmp1(0, 1), tmp1(0, 2), tmp1(0,3);
+        return out;
     };
 
     program.FragmentShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
@@ -179,26 +255,109 @@ void wireframe_render(const double alpha, Eigen::Matrix<FrameBufferAttributes, E
 
     //TODO: generate the vertex attributes for the edges and rasterize the lines
     //TODO: use the transformation matrix
+    VertexAttributes v1;
+    VertexAttributes v2;
+    VertexAttributes v3;
+    for (int i =0;i<facets.rows();++i){
+        int a = facets(i,0);
+        int b = facets(i,1);
+        int c = facets(i,2);
+        //line 1
+        v1 = VertexAttributes(vertices(a,0),vertices(a,1),vertices(a,2));
+        v2 = VertexAttributes(vertices(b,0),vertices(b,1),vertices(b,2));
+        v3 = VertexAttributes(vertices(c,0),vertices(c,1),vertices(c,2));
+        v1.trafo = trafo;
+        v2.trafo = trafo;
+        v3.trafo = trafo;
+        vertex_attributes.push_back(v2);
+        vertex_attributes.push_back(v1);
+
+        vertex_attributes.push_back(v2);
+        vertex_attributes.push_back(v3);
+        //line 3
+        vertex_attributes.push_back(v1);
+        vertex_attributes.push_back(v3);
+    }
+
 
     rasterize_lines(program, uniform, vertex_attributes, 0.5, frameBuffer);
 }
 
+
+
 void get_shading_program(Program &program)
 {
+    
     program.VertexShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
         //TODO: transform the position and the normal
         //TODO: compute the correct lighting
-        return va;
+        VertexAttributes out;
+        out.position = -uniform.projection * va.trafo * va.position;
+        Vector4d p, N;
+        N = va.norm;
+        p << out.position[0], out.position[1], out.position[2], out.position[3];
+        Vector4d lights_color(0, 0, 0, 0);
+        for (int i = 0; i < light_positions.size(); ++i)
+        // for (int i = 0; i < 1; ++i)
+        {
+            const Vector3d &light_position = light_positions[i]; //light source position of each light
+            const Vector3d &light_color = light_colors[i];// light color of one light
+
+            const Vector3d Li = (light_position - p).normalized(); //normal vector pointing to light from intersectio
+            const Vector3d shadow_ray =  (light_position - p).normalized();
+            Vector4d diff_color = obj_diffuse_color;
+            Vector4d specular_color = obj_specular_color;
+            // Diffuse contribution
+            const Vector4d diffuse = diff_color * std::max(Li.dot(N), 0.0);
+            const Vector3d camera_view_position = camera_position - p;
+            const Vector3d h = (shadow_ray + (-camera_view_position)).normalized();
+            const Vector4d specular = -specular_color * pow(std::max(h.dot(N), 0.0), obj_specular_exponent);
+            // std::cout << specular << std::endl;
+            // Attenuate lights according to the squared distance to the lights
+            const Vector3d D = light_position - p;
+
+            lights_color += (diffuse + specular).cwiseProduct(light_color) / D.squaredNorm();
+            // lights_color += diffuse + specular;
+        }
+        Vector4d C = ambient_light + lights_color;
+
+        //Set alpha to 1
+        Vector4f colo;
+        C(3) = 1;
+        std::cout<<C<<endl;
+        std::cout<<endl;
+        colo << C(0), C(1), C(2), 1;
+        out.color = colo;
+        return out;
     };
 
     program.FragmentShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
         //TODO: create the correct fragment
-        return FragmentAttributes(1, 0, 0);
+        Vector4f color = va.color;
+        FragmentAttributes out (color[0], color[1], color[2]); //can't change
+        // FragmentAttributes out;
+        // out.color = color;
+        return out;
+    //    return FragmentAttributes(va.color);
     };
 
     program.BlendingShader = [](const FragmentAttributes &fa, const FrameBufferAttributes &previous) {
         //TODO: implement the depth check
-        return FrameBufferAttributes(fa.color[0] * 255, fa.color[1] * 255, fa.color[2] * 255, fa.color[3] * 255);
+        if (fa.position[2] < previous.depth)
+        {
+            // float alpha = fa.color[3];
+
+            // Blend the current fragment color with the previous texel
+            // Eigen::Vector4f blend = fa.color.array() * alpha + (previous.color.cast<float>().array() / 255) * (1 - alpha);
+
+            // FrameBufferAttributes out (blend[0] * 255, blend[1] * 255, blend[2] * 255, blend[3] * 255);
+            FrameBufferAttributes out(fa.color[0] * 255, fa.color[1] * 255, fa.color[2] * 255, fa.color[3] * 255);
+            out.depth = fa.position[2];
+            return out;
+        }
+        else
+            return previous;
+
     };
 }
 
@@ -208,12 +367,45 @@ void flat_shading(const double alpha, Eigen::Matrix<FrameBufferAttributes, Eigen
     build_uniform(uniform);
     Program program;
     get_shading_program(program);
-    Eigen::Matrix4d trafo = compute_rotation(alpha);
+    Eigen::Matrix4f trafo = compute_rotation(alpha);
 
     std::vector<VertexAttributes> vertex_attributes;
     //TODO: compute the normals
     //TODO: set material colors
+    VertexAttributes v1;
+    VertexAttributes v2;
+    VertexAttributes v3;
+    for (int i =0;i<facets.rows();++i){
+        int a = facets(i,0);
+        int b = facets(i,1);
+        int c = facets(i,2);
+        //line 1
+        Vector3d k;
+        k << vertices(a,0),vertices(a,1),vertices(a,2);
+        Vector3d h;
+        h <<vertices(b,0),vertices(b,1),vertices(b,2);
+        Vector3d q;
+        q << vertices(c,0),vertices(c,1),vertices(c,2);
+        Vector3d u = k - h;
+        Vector3d w = q - h;
+        Vector3d norm = u.cross(w).normalized();
 
+        v1 = VertexAttributes(vertices(a,0),vertices(a,1),vertices(a,2));
+        v1.norm = norm;
+        v2 = VertexAttributes(vertices(b,0),vertices(b,1),vertices(b,2));
+        v2.norm = norm;
+        v3 = VertexAttributes(vertices(c,0),vertices(c,1),vertices(c,2));
+        v3.norm = norm;
+        v1.trafo = trafo;
+        v2.trafo = trafo;
+        v3.trafo = trafo;
+
+        vertex_attributes.push_back(v1);
+        vertex_attributes.push_back(v2);
+        vertex_attributes.push_back(v3);
+
+    }
+    // std::cout<<uniform<<endl;
     rasterize_triangles(program, uniform, vertex_attributes, frameBuffer);
 }
 
@@ -224,14 +416,65 @@ void pv_shading(const double alpha, Eigen::Matrix<FrameBufferAttributes, Eigen::
     Program program;
     get_shading_program(program);
 
-    Eigen::Matrix4d trafo = compute_rotation(alpha);
-
-    //TODO: compute the vertex normals as vertex normal average
-
+    Eigen::Matrix4f trafo = compute_rotation(alpha);
     std::vector<VertexAttributes> vertex_attributes;
     //TODO: create vertex attributes
     //TODO: set material colors
+    VertexAttributes v1;
+    VertexAttributes v2;
+    VertexAttributes v3;
+    MatrixXd norm_vs (vertices.rows(), 3);
+    for (int i =0;i<facets.rows();++i){
+        int a = facets(i,0);
+        int b = facets(i,1);
+        int c = facets(i,2);
+        //line 1
+        Vector3d k;
+        k << vertices(a,0),vertices(a,1),vertices(a,2);
+        Vector3d h;
+        h <<vertices(b,0),vertices(b,1),vertices(b,2);
+        Vector3d q;
+        q << vertices(c,0),vertices(c,1),vertices(c,2);
+        Vector3d u = k - h;
+        Vector3d w = q - h;
+        Vector3d norm = u.cross(w).normalized();
+        norm_vs(a,0) += norm(0);
+        norm_vs(a, 1) += norm(1);
+        norm_vs(a,2)+=norm(2);
+        norm_vs(b,0) += norm(0);
+        norm_vs(b, 1) += norm(1);
+        norm_vs(b,2)+=norm(2);
+        norm_vs(c,0) += norm(0);
+        norm_vs(c, 1) += norm(1);
+        norm_vs(c,2)+=norm(2);
 
+    }
+
+    for(int i =0;i<facets.rows();++i){
+        int a = facets(i,0);
+        int b = facets(i,1);
+        int c = facets(i,2);
+        
+        v1 = VertexAttributes(vertices(a,0),vertices(a,1),vertices(a,2));
+        v1.norm << norm_vs(a, 0), norm_vs(a, 1), norm_vs(a, 2);
+        v1.norm = v1.norm.normalized();
+
+        v2 = VertexAttributes(vertices(b,0),vertices(b,1),vertices(b,2));
+        v2.norm << norm_vs(b, 0), norm_vs(b, 1), norm_vs(b, 2);
+        v2.norm = v2.norm.normalized();
+
+        v3 = VertexAttributes(vertices(c,0),vertices(c,1),vertices(c,2));
+        v3.norm << norm_vs(c, 0), norm_vs(c, 1), norm_vs(c, 2);
+        v3.norm = v3.norm.normalized();
+
+        v1.trafo = trafo;
+        v2.trafo = trafo;
+        v3.trafo = trafo;
+        vertex_attributes.push_back(v1);
+        vertex_attributes.push_back(v2);
+        vertex_attributes.push_back(v3);
+    }
+    // std::cout<< norm_vs<<endl;
     rasterize_triangles(program, uniform, vertex_attributes, frameBuffer);
 }
 
@@ -246,20 +489,40 @@ int main(int argc, char *argv[])
     simple_render(frameBuffer);
     framebuffer_to_uint8(frameBuffer, image);
     stbi_write_png("simple.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
-
+    
+    frameBuffer.setConstant(FrameBufferAttributes());
     wireframe_render(0, frameBuffer);
     framebuffer_to_uint8(frameBuffer, image);
     stbi_write_png("wireframe.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
 
+    frameBuffer.setConstant(FrameBufferAttributes());
     flat_shading(0, frameBuffer);
     framebuffer_to_uint8(frameBuffer, image);
     stbi_write_png("flat_shading.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
 
+    frameBuffer.setConstant(FrameBufferAttributes());
     pv_shading(0, frameBuffer);
     framebuffer_to_uint8(frameBuffer, image);
     stbi_write_png("pv_shading.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
 
     //TODO: add the animation
+
+    const char *fileName = "flat_rotation.gif";
+    // vector<uint8_t> image;
+    int delay = 25;
+    GifWriter g;
+    GifBegin(&g, fileName, frameBuffer.rows(), frameBuffer.cols(), delay);
+
+    for (float i = 0; i < 2*M_PI; i += 0.25)
+    {
+        frameBuffer.setConstant(FrameBufferAttributes());
+        flat_shading(i, frameBuffer);
+        // pv_shading(i, frameBuffer);
+        framebuffer_to_uint8(frameBuffer, image);
+        GifWriteFrame(&g, image.data(), frameBuffer.rows(), frameBuffer.cols(), delay);
+    }
+
+    GifEnd(&g);
 
     return 0;
 }
