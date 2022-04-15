@@ -333,22 +333,27 @@ void get_shading_program(Program &program)
         Vector4f color = va.color;
         FragmentAttributes out (color[0], color[1], color[2], color[3]);
         out.position = va.position;
+        out.depth = va.position[2];
         return out;
     //    return FragmentAttributes(va.color);
     };
 
     program.BlendingShader = [](const FragmentAttributes &fa, const FrameBufferAttributes &previous) {
         //TODO: implement the depth check
-        if (fa.position[2] < previous.depth)
+        double alpha = fa.color(3);
+        Vector4d new_color (fa.color(0), fa.color(1), fa.color(2), fa.color(3));
+        Vector4d pre_color (previous.color(0)/255, previous.color(1)/255,previous.color(2)/255,previous.color(3)/255);
+        Vector4d out_color = (1 - alpha)*pre_color + alpha*new_color;
+        if (fa.depth < previous.depth)
         {
             // float alpha = fa.color[3];
-
-            // Blend the current fragment color with the previous texel
             // Eigen::Vector4f blend = fa.color.array() * alpha + (previous.color.cast<float>().array() / 255) * (1 - alpha);
 
             // FrameBufferAttributes out (blend[0] * 255, blend[1] * 255, blend[2] * 255, blend[3] * 255);
+            // FrameBufferAttributes out(out_color[0] * 255, out_color[1] * 255, out_color[2] * 255, out_color[3] * 255);
             FrameBufferAttributes out(fa.color[0] * 255, fa.color[1] * 255, fa.color[2] * 255, fa.color[3] * 255);
-            out.depth = fa.position[2];
+
+            out.depth = fa.depth;
             return out;
         }
         else
@@ -371,6 +376,11 @@ void flat_shading(const double alpha, Eigen::Matrix<FrameBufferAttributes, Eigen
     VertexAttributes v1;
     VertexAttributes v2;
     VertexAttributes v3;
+    Matrix3d thd_trafo;
+    thd_trafo << trafo(0,0), trafo(0,1), trafo(0,2),
+                trafo(1,0), trafo(1,1), trafo(1,2),
+                trafo(2,0), trafo(2,1), trafo(2,2);
+
     for (int i =0;i<facets.rows();++i){
         int a = facets(i,0);
         int b = facets(i,1);
@@ -378,10 +388,13 @@ void flat_shading(const double alpha, Eigen::Matrix<FrameBufferAttributes, Eigen
         //line 1
         Vector3d k;
         k << vertices(a,0),vertices(a,1),vertices(a,2);
+        k = thd_trafo * k;
         Vector3d h;
         h <<vertices(b,0),vertices(b,1),vertices(b,2);
+        h = thd_trafo * h;
         Vector3d q;
         q << vertices(c,0),vertices(c,1),vertices(c,2);
+        q= thd_trafo * q;
         Vector3d u = k - h;
         Vector3d w = q - h;
         Vector3d norm = u.cross(w).normalized();
@@ -420,6 +433,12 @@ void pv_shading(const double alpha, Eigen::Matrix<FrameBufferAttributes, Eigen::
     VertexAttributes v2;
     VertexAttributes v3;
     MatrixXd norm_vs (vertices.rows(), 3);
+    norm_vs.setZero();
+    Matrix3d thd_trafo;
+    thd_trafo << trafo(0,0), trafo(0,1), trafo(0,2),
+                trafo(1,0), trafo(1,1), trafo(1,2),
+                trafo(2,0), trafo(2,1), trafo(2,2);
+
     for (int i =0;i<facets.rows();++i){
         int a = facets(i,0);
         int b = facets(i,1);
@@ -427,10 +446,13 @@ void pv_shading(const double alpha, Eigen::Matrix<FrameBufferAttributes, Eigen::
         //line 1
         Vector3d k;
         k << vertices(a,0),vertices(a,1),vertices(a,2);
+        k = thd_trafo * k;
         Vector3d h;
         h <<vertices(b,0),vertices(b,1),vertices(b,2);
+        h = thd_trafo * h;
         Vector3d q;
         q << vertices(c,0),vertices(c,1),vertices(c,2);
+        q = thd_trafo * q;
         Vector3d u = k - h;
         Vector3d w = q - h;
         Vector3d norm = u.cross(w).normalized();
@@ -503,17 +525,17 @@ int main(int argc, char *argv[])
 
     //TODO: add the animation
 
-    const char *fileName = "pv_rotation.gif";
+    const char *fileName = "flat_rotation.gif";
     // vector<uint8_t> image;
     int delay = 25;
     GifWriter g;
     GifBegin(&g, fileName, frameBuffer.rows(), frameBuffer.cols(), delay);
 
-    for (float i = 0; i < 2*M_PI; i += 0.25)
+    for (float i = 0; i < 2*M_PI; i += 0.3)
     {
         frameBuffer.setConstant(FrameBufferAttributes());
-        // flat_shading(i, frameBuffer);
-        pv_shading(i, frameBuffer);
+        flat_shading(i, frameBuffer);
+        // pv_shading(i, frameBuffer);
         framebuffer_to_uint8(frameBuffer, image);
         GifWriteFrame(&g, image.data(), frameBuffer.rows(), frameBuffer.cols(), delay);
     }

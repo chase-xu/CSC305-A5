@@ -42,6 +42,7 @@ public:
 
     Eigen::Vector4f color;
     Eigen::Vector4f position;
+    float depth;
 };
 
 class FrameBufferAttributes
