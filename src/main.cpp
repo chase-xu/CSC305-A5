@@ -293,6 +293,7 @@ void get_shading_program(Program &program)
         //TODO: compute the correct lighting
         VertexAttributes out;
         out.position = -uniform.projection * va.trafo * va.position;
+        // out.position = -uniform.projection  * va.position;
         Vector3d p, N;
         N = va.norm;
         p << out.position[0], out.position[1], out.position[2];
@@ -502,7 +503,7 @@ int main(int argc, char *argv[])
 
     //TODO: add the animation
 
-    const char *fileName = "flat_rotation.gif";
+    const char *fileName = "pv_rotation.gif";
     // vector<uint8_t> image;
     int delay = 25;
     GifWriter g;
@@ -511,8 +512,8 @@ int main(int argc, char *argv[])
     for (float i = 0; i < 2*M_PI; i += 0.25)
     {
         frameBuffer.setConstant(FrameBufferAttributes());
-        flat_shading(i, frameBuffer);
-        // pv_shading(i, frameBuffer);
+        // flat_shading(i, frameBuffer);
+        pv_shading(i, frameBuffer);
         framebuffer_to_uint8(frameBuffer, image);
         GifWriteFrame(&g, image.data(), frameBuffer.rows(), frameBuffer.cols(), delay);
     }
